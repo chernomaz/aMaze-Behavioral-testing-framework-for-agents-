@@ -1,0 +1,7 @@
+{
+  "mode": "control_plane",
+  "allowed_tools": ["pdf_search"],
+  "max_llm_calls": 2,
+  "max_tool_calls": 1,
+  "audit_file": "agent_audit.json"
+}

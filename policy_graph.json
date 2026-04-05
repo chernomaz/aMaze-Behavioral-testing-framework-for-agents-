@@ -1,0 +1,19 @@
+{
+  "mode": "graph",
+  "nodes": ["agent", "llm", "tool:pdf_search", "finish"],
+  "edges": [
+    ["agent", "llm"],
+    ["llm", "tool:pdf_search"],
+    ["tool:pdf_search", "finish"]
+  ],
+  "ignore_internal_llm": true,
+  "max_tokens": 4000,
+  "mocks": [
+    {
+      "target": "llm",
+      "match_contains": "search",
+      "return_tool_call": {"tool": "pdf_search", "args": {"query": "1Scenarios in humanitarian data management"}}
+    }
+  ],
+  "audit_file": "agent_audit.json"
+}

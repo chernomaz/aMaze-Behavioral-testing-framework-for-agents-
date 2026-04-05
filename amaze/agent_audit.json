@@ -1,0 +1,61 @@
+{
+  "trace_id": "9be5ea63-e5d5-4900-9e40-cf33cc813099",
+  "passed": true,
+  "totals": {
+    "llm_calls": 1,
+    "indirect_llm_calls": 1,
+    "tool_calls": 1,
+    "tool_calls_by_name": {
+      "pdf_search": 1
+    },
+    "input_tokens": 876,
+    "output_tokens": 283,
+    "total_tokens": 1159,
+    "call_sequence": [
+      "llm",
+      "tool:pdf_search"
+    ]
+  },
+  "assertion_failures": [],
+  "events": [
+    {
+      "ts": 1775322975.213352,
+      "trace_id": "9be5ea63-e5d5-4900-9e40-cf33cc813099",
+      "type": "llm_call",
+      "payload": {
+        "count": 1,
+        "model": "gpt-4.1-mini"
+      }
+    },
+    {
+      "ts": 1775322975.2147787,
+      "trace_id": "9be5ea63-e5d5-4900-9e40-cf33cc813099",
+      "type": "tool_call",
+      "payload": {
+        "tool": "pdf_search",
+        "count": 1,
+        "input": "{'query': 'Scenarios in humanitarian data management', 'runtime': ToolRuntime(state={'messages': [HumanMessage(content='search for bitcoin price today', additional_kwargs={}, response_metadata={}, id="
+      }
+    },
+    {
+      "ts": 1775322976.6852434,
+      "trace_id": "9be5ea63-e5d5-4900-9e40-cf33cc813099",
+      "type": "llm_call_indirect",
+      "payload": {
+        "count": 1,
+        "model": "gpt-4.1-mini"
+      }
+    },
+    {
+      "ts": 1775322980.1817124,
+      "trace_id": "9be5ea63-e5d5-4900-9e40-cf33cc813099",
+      "type": "token_usage",
+      "payload": {
+        "model": "gpt-4.1-mini",
+        "input_tokens": 876,
+        "output_tokens": 283,
+        "running_total": 1159
+      }
+    }
+  ]
+}
