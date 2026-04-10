@@ -434,6 +434,38 @@
       .two-col, .three-col { grid-template-columns: 1fr; }
       .form-row { grid-template-columns: 1fr; }
     }
+
+    /* ── Policy Editor (mock-style) ── */
+    .hidden-panel { display: none !important; }
+    .item-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 14px; position: relative; margin-bottom: 0; }
+    .item-card .del-btn { position: absolute; top: 10px; right: 12px; cursor: pointer; color: var(--muted); font-size: 20px; line-height: 1; }
+    .item-card .del-btn:hover { color: var(--red); }
+    .item-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 0; }
+    .mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .mini-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+    .field input, .field select, .field textarea { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; color: var(--text); padding: 9px 12px; font-size: 13px; outline: none; font-family: inherit; transition: border-color .15s; width: 100%; box-sizing: border-box; }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--blue); }
+    .field select option { background: var(--panel-2); }
+    .pe-toolbar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+    .mode-btn { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); transition: all .15s; }
+    .mode-btn.active { border-color: var(--blue); color: var(--blue); background: rgba(93,169,255,.1); }
+    .pe-hint { font-size: 11px; color: var(--muted); margin-left: auto; }
+    #policy-canvas-wrap { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; position: relative; height: 420px; cursor: default; }
+    #policy-canvas { width: 100%; height: 100%; display: block; }
+    .radio-opt { display: flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); cursor: pointer; font-size: 13px; transition: border-color .15s, background .15s; }
+    .radio-opt:hover { background: rgba(255,255,255,.03); }
+    .radio-opt.selected { border-color: var(--blue); background: rgba(93,169,255,.08); color: var(--blue); }
+    /* Tool picker modal */
+    #tool-picker-overlay { position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:flex;align-items:center;justify-content:center; }
+    #tool-picker-modal { background:var(--panel);border:1px solid var(--line);border-radius:16px;width:480px;max-height:70vh;overflow-y:auto;padding:20px; }
+    .tp-server { margin-bottom:14px; }
+    .tp-server-name { font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px; }
+    .tp-tool-btn { display:flex;flex-direction:column;gap:2px;width:100%;text-align:left;padding:9px 12px;margin-bottom:4px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);cursor:pointer;transition:border-color .15s; }
+    .tp-tool-btn:hover { border-color:var(--cyan);background:rgba(67,209,198,.06); }
+    .tp-tool-btn .tname { font-size:13px;font-weight:700;color:var(--cyan);font-family:ui-monospace,monospace; }
+    .tp-tool-btn .tdesc { font-size:11px;color:var(--muted); }
   </style>
 </head>
 <body>
@@ -776,14 +808,31 @@ register('#run-test',
         appendLog(logArea, `Run started: ${run_id}\n`, 'info');
 
         activeES = new EventSource(`/api/runs/test/${encodeURIComponent(run_id)}/stream`);
-        activeES.onmessage = (evt) => {
+        activeES.onmessage = async (evt) => {
           try {
             const data = JSON.parse(evt.data);
             if (data.done) {
-              outcomeBadge.innerHTML = badge(data.outcome);
-              appendLog(logArea, `\n--- Done: ${data.outcome.toUpperCase()} ---`, data.outcome === 'pass' || data.outcome === 'xfail' ? 'ok' : 'err');
               activeES.close(); activeES = null;
               runBtn.disabled = false;
+              // Replace entire area with HTML report
+              try {
+                const runData = await api(`/runs/test/${run_id}`);
+                if (runData.audit_html_path) {
+                  const fname = runData.audit_html_path.split('/').pop();
+                  area.innerHTML = `
+                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                      <h2 style="font-size:18px;font-weight:700">${esc(name)}</h2>
+                      ${badge(data.outcome)}
+                      <button class="btn btn-ghost btn-sm" onclick="navigate('#run-test')" style="margin-left:auto">← New Run</button>
+                    </div>
+                    <iframe src="/audit/${esc(fname)}" style="width:100%;height:calc(100vh - 130px);border:none;border-radius:12px;background:#fff;"></iframe>
+                  `;
+                  return;
+                }
+              } catch {}
+              // Fallback: just show outcome badge
+              outcomeBadge.innerHTML = badge(data.outcome);
+              appendLog(logArea, `\n--- Done: ${data.outcome.toUpperCase()} ---`, data.outcome === 'pass' || data.outcome === 'xfail' ? 'ok' : 'err');
             } else if (data.line !== undefined) {
               appendLog(logArea, data.line, 'info');
             }
@@ -886,8 +935,332 @@ window.deletePolicy = async function(name) {
 };
 
 // ────────────────────────────────────────────────────────────
-// POLICY EDITOR
+// POLICY EDITOR  (SVG graph canvas + rich mocks/assertions)
 // ────────────────────────────────────────────────────────────
+
+const PE = {
+  nodes: [], edges: [],
+  mode: 'drag',     // drag | connect | delete
+  selected: null,
+  nextId: 1,
+};
+const NODE_COLORS = { agent:'#5da9ff', llm:'#a97cff', finish:'#1fbf75', default:'#43d1c6' };
+const NODE_W = 110, NODE_H = 40;
+
+window.peInit = function() {
+  const svg = document.getElementById('policy-canvas');
+  if (!svg) return;
+  svg.innerHTML = `<defs>
+    <marker id="pe-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#9fb0d1"/>
+    </marker>
+  </defs>`;
+  if (PE.nodes.length === 0) {
+    PE.nodes = [{id:'n1',label:'agent',x:60,y:180,type:'agent'}];
+    PE.edges = []; PE.nextId = 2;
+  }
+  peRender();
+};
+
+window.peRender = function() {
+  const svg = document.getElementById('policy-canvas');
+  if (!svg) return;
+  const defs = svg.querySelector('defs')?.outerHTML || '';
+  svg.innerHTML = defs;
+
+  PE.edges.forEach((e, i) => {
+    const a = PE.nodes.find(n=>n.id===e.from);
+    const b = PE.nodes.find(n=>n.id===e.to);
+    if (!a || !b) return;
+    const x1=a.x+NODE_W, y1=a.y+NODE_H/2, x2=b.x, y2=b.y+NODE_H/2, mx=(x1+x2)/2;
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d',`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
+    path.setAttribute('fill','none'); path.setAttribute('stroke','#9fb0d1');
+    path.setAttribute('stroke-width','2'); path.setAttribute('marker-end','url(#pe-arrow)');
+    if (PE.mode==='delete') { path.style.cursor='pointer'; path.addEventListener('click',()=>{ PE.edges.splice(i,1); peRender(); }); }
+    svg.appendChild(path);
+  });
+
+  PE.nodes.forEach(n => {
+    const color = n.type==='tool' ? NODE_COLORS.default : (NODE_COLORS[n.type]||NODE_COLORS.default);
+    const isSel = PE.selected===n.id;
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('transform',`translate(${n.x},${n.y})`);
+    const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    rect.setAttribute('width',NODE_W); rect.setAttribute('height',NODE_H); rect.setAttribute('rx','10');
+    rect.setAttribute('fill', isSel ? color : 'rgba(0,0,0,0)');
+    rect.setAttribute('stroke', color); rect.setAttribute('stroke-width', isSel?'2.5':'2');
+    const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+    text.setAttribute('x',NODE_W/2); text.setAttribute('y',NODE_H/2+5);
+    text.setAttribute('text-anchor','middle'); text.setAttribute('fill', isSel?'#fff':color);
+    text.setAttribute('font-size','12'); text.setAttribute('font-weight','700');
+    text.setAttribute('font-family','Inter,sans-serif'); text.textContent = n.label;
+    g.appendChild(rect); g.appendChild(text); g.dataset.nodeId = n.id;
+    svg.appendChild(g);
+  });
+  peSvgEvents();
+  peSyncJson();
+};
+
+function peSvgEvents() {
+  const svg = document.getElementById('policy-canvas');
+  if (!svg) return;
+  let drag = null;
+  svg.querySelectorAll('g[data-node-id]').forEach(g => {
+    const id = g.dataset.nodeId;
+    if (PE.mode==='drag') {
+      g.style.cursor='grab';
+      g.addEventListener('mousedown', e => {
+        e.preventDefault();
+        const pt=svgPt(svg,e); const n=PE.nodes.find(n=>n.id===id);
+        drag={id,ox:pt.x-n.x,oy:pt.y-n.y}; PE.selected=id; peRender();
+      });
+    } else if (PE.mode==='connect') {
+      g.style.cursor='crosshair';
+      g.addEventListener('click', e => {
+        e.stopPropagation();
+        if (!PE.selected) {
+          PE.selected=id; peRender();
+          const h=document.getElementById('pe-hint'); if(h) h.textContent='Now click the destination node';
+        } else if (PE.selected!==id) {
+          PE.edges.push({from:PE.selected,to:id}); PE.selected=null;
+          const h=document.getElementById('pe-hint'); if(h) h.textContent='Edge added! Click source again';
+          peRender();
+        }
+      });
+    } else if (PE.mode==='delete') {
+      g.style.cursor='pointer';
+      g.addEventListener('click', e => {
+        e.stopPropagation();
+        PE.nodes=PE.nodes.filter(n=>n.id!==id); PE.edges=PE.edges.filter(e=>e.from!==id&&e.to!==id);
+        peRender();
+      });
+    }
+  });
+  if (PE.mode==='drag') {
+    svg.addEventListener('mousemove', e => {
+      if (!drag) return;
+      const pt=svgPt(svg,e); const n=PE.nodes.find(n=>n.id===drag.id);
+      if (n) { n.x=pt.x-drag.ox; n.y=pt.y-drag.oy; peRender(); }
+    });
+    svg.addEventListener('mouseup', ()=>{ drag=null; });
+    svg.addEventListener('mouseleave', ()=>{ drag=null; });
+  }
+}
+
+function svgPt(svg,e) { const r=svg.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+
+function peSyncJson() {
+  const el = document.getElementById('pe-json-preview');
+  if (!el) return;
+  const nodes = PE.nodes.map(n=>n.label);
+  const edges = PE.edges.map(e=>[PE.nodes.find(n=>n.id===e.from)?.label, PE.nodes.find(n=>n.id===e.to)?.label].filter(Boolean));
+  const ignEl = document.getElementById('pe-ignore-llm');
+  const ignore_internal_llm = ignEl ? ignEl.dataset.val!=='false' : true;
+  el.textContent = JSON.stringify({mode:'graph',nodes,edges,ignore_internal_llm},null,2);
+}
+window.peSyncJson = peSyncJson;
+
+window.setPeMode = function(mode) {
+  PE.mode=mode; PE.selected=null;
+  ['drag','connect','delete'].forEach(m=>{ const b=document.getElementById('mode-'+m); if(b) b.classList.toggle('active',m===mode); });
+  const hints={drag:'Click a node to select; drag to move',connect:'Click source node, then destination',delete:'Click a node or edge to delete it'};
+  const h=document.getElementById('pe-hint'); if(h) h.textContent=hints[mode];
+  peRender();
+};
+
+window.peAddNode = function(type) {
+  PE.nodes.push({id:'n'+PE.nextId++,label:type,x:150+(PE.nextId*20%280),y:80+(PE.nextId*15%280),type});
+  peRender();
+};
+
+window.peAddNodeTool = async function() {
+  let servers=[];
+  try { servers=await api('/mcp-servers'); } catch {}
+  let serverHtml='';
+  for (const s of servers) {
+    let tools=[]; try { tools=JSON.parse(s.tools_json||'[]'); } catch {}
+    if (!tools.length) continue;
+    serverHtml+=`<div class="tp-server"><div class="tp-server-name">${esc(s.name)}</div>`;
+    for (const t of tools) {
+      serverHtml+=`<button class="tp-tool-btn" onclick="pePickTool('${esc(t.name||t)}')"><span class="tname">tool:${esc(t.name||t)}</span><span class="tdesc">${esc(t.description||'')}</span></button>`;
+    }
+    serverHtml+='</div>';
+  }
+  if (!serverHtml) serverHtml='<div style="color:var(--muted);font-size:13px;margin-bottom:12px">No MCP servers with fetched tools. Use manual entry below.</div>';
+  const overlay=document.createElement('div'); overlay.id='tool-picker-overlay';
+  overlay.innerHTML=`<div id="tool-picker-modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h3 style="margin:0;font-size:14px;font-weight:700">Select Tool from MCP Servers</h3>
+      <span style="cursor:pointer;font-size:22px;color:var(--muted);line-height:1" onclick="document.getElementById('tool-picker-overlay').remove()">×</span>
+    </div>
+    ${serverHtml}
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0"/>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:12px;color:var(--muted)">or enter manually:</span>
+      <input id="tp-manual" placeholder="tool_name" style="flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;color:var(--text);padding:6px 10px;font-size:12px;outline:none"/>
+      <button class="btn btn-ghost btn-sm" onclick="pePickToolManual()">Add</button>
+    </div>
+  </div>`;
+  overlay.addEventListener('click',e=>{ if(e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+};
+
+window.pePickTool = function(name) {
+  const ov=document.getElementById('tool-picker-overlay'); if(ov) ov.remove();
+  PE.nodes.push({id:'n'+PE.nextId++,label:'tool:'+name,x:250+(PE.nextId*15%220),y:150+(PE.nextId*20%220),type:'tool'});
+  peRender();
+};
+
+window.pePickToolManual = function() {
+  const inp=document.getElementById('tp-manual');
+  if(inp&&inp.value.trim()) pePickTool(inp.value.trim());
+};
+
+window.switchPolicyTab = function(tab) {
+  document.querySelectorAll('[data-ptab]').forEach(t=>t.classList.toggle('active',t.dataset.ptab===tab));
+  document.getElementById('ptab-graph').classList.toggle('hidden-panel', tab!=='graph');
+  document.getElementById('ptab-control').classList.toggle('hidden-panel', tab!=='control');
+  if (tab==='graph') setTimeout(()=>peRender(), 10);
+};
+
+window.addMock = function(data={}) {
+  const list=document.getElementById('pe-mocks-list'); if(!list) return;
+  const type=data.return_tool_call?'tool_call':data.ai_message?'ai_message':data.output!==undefined?'output':'tool_call';
+  const toolName=data.return_tool_call?.tool||'';
+  const toolArgs=data.return_tool_call?.args?JSON.stringify(data.return_tool_call.args):'';
+  const aiMsg=typeof data.ai_message==='string'?data.ai_message:'';
+  const output=typeof data.output==='string'?data.output:'';
+  const card=document.createElement('div'); card.className='item-card';
+  card.innerHTML=`
+    <span class="del-btn" onclick="this.closest('.item-card').remove()">×</span>
+    <div class="mini-grid-3" style="margin-bottom:10px">
+      <div class="field"><label>Target</label><input placeholder="llm or tool:name" value="${esc(data.target||'')}"/></div>
+      <div class="field"><label>Match Contains</label><input placeholder="(optional)" value="${esc(data.match_contains||'')}"/></div>
+      <div class="field"><label>Response Type</label>
+        <select onchange="toggleMockFields(this)">
+          <option value="tool_call" ${type==='tool_call'?'selected':''}>tool_call</option>
+          <option value="ai_message" ${type==='ai_message'?'selected':''}>ai_message</option>
+          <option value="output" ${type==='output'?'selected':''}>output text</option>
+        </select>
+      </div>
+    </div>
+    <div class="mini-grid mock-tc-fields" ${type!=='tool_call'?'style="display:none"':''}>
+      <div class="field"><label>Tool Name</label><input class="mock-tool-name" placeholder="web_search" value="${esc(toolName)}"/></div>
+      <div class="field"><label>Tool Args (JSON)</label><input class="mock-tool-args" placeholder='{"query":"..."}' value="${esc(toolArgs)}"/></div>
+    </div>
+    <div class="field mock-ai-fields" ${type!=='ai_message'?'style="display:none"':''}>
+      <label>AI Message Text</label><input class="mock-ai-val" placeholder="The answer is..." value="${esc(aiMsg)}"/>
+    </div>
+    <div class="field mock-out-fields" ${type!=='output'?'style="display:none"':''}>
+      <label>Output Text</label><input class="mock-out-val" placeholder="Tool result text..." value="${esc(output)}"/>
+    </div>`;
+  list.appendChild(card);
+};
+
+window.toggleMockFields = function(sel) {
+  const card=sel.closest('.item-card'); const type=sel.value;
+  card.querySelector('.mock-tc-fields').style.display=type==='tool_call'?'':'none';
+  card.querySelector('.mock-ai-fields').style.display=type==='ai_message'?'':'none';
+  card.querySelector('.mock-out-fields').style.display=type==='output'?'':'none';
+};
+
+window.addAssertion = function(data={}) {
+  const list=document.getElementById('pe-assertions-list'); if(!list) return;
+  const card=document.createElement('div'); card.className='item-card';
+  card.innerHTML=`
+    <span class="del-btn" onclick="this.closest('.item-card').remove()">×</span>
+    <div class="mini-grid-3">
+      <div class="field"><label>Target</label><input class="as-target" placeholder="llm or tool:name" value="${esc(data.target||'')}"/></div>
+      <div class="field"><label>Check</label>
+        <select class="as-check"><option ${data.check==='input'||!data.check?'selected':''}>input</option><option ${data.check==='output'?'selected':''}>output</option></select>
+      </div>
+      <div class="field"><label>Operator</label>
+        <select class="as-op">
+          <option ${data.operator==='contains'?'selected':''}>contains</option>
+          <option ${data.operator==='equals'?'selected':''}>equals</option>
+          <option ${data.operator==='starts_with'?'selected':''}>starts_with</option>
+          <option ${data.operator==='matches_regex'?'selected':''}>matches_regex</option>
+        </select>
+      </div>
+      <div class="field" style="grid-column:1/3"><label>Expected Value</label><input class="as-expected" placeholder="expected value" value="${esc(data.expected||'')}"/></div>
+      <div class="field"><label>Description (optional)</label><input class="as-desc" placeholder="checks output contains..." value="${esc(data.description||'')}"/></div>
+    </div>`;
+  list.appendChild(card);
+};
+
+window.addPerToolLimit = function(tool='', maxCalls='') {
+  const list=document.getElementById('pe-per-tool-limits'); if(!list) return;
+  const card=document.createElement('div'); card.className='item-card'; card.style.padding='10px';
+  card.innerHTML=`
+    <div class="mini-grid">
+      <div class="field"><label>Tool Name</label><input class="ptl-tool" placeholder="web_search" value="${esc(String(tool))}"/></div>
+      <div class="field"><label>Max Calls</label><input type="number" class="ptl-max" placeholder="1" value="${esc(String(maxCalls))}"/></div>
+    </div>
+    <span class="del-btn" onclick="this.closest('.item-card').remove()">×</span>`;
+  list.appendChild(card);
+};
+
+window.peImportJson = function(imported) {
+  const isGraph = imported.mode==='graph' || (!imported.mode && Array.isArray(imported.nodes));
+
+  // Switch tab
+  switchPolicyTab(isGraph ? 'graph' : 'control');
+
+  if (isGraph) {
+    // Rebuild PE nodes/edges from imported JSON
+    PE.nodes=[]; PE.edges=[]; PE.selected=null; PE.nextId=1;
+    const pos=[{x:60,y:180},{x:220,y:180},{x:380,y:100},{x:380,y:260},{x:540,y:180},{x:700,y:180},{x:700,y:100}];
+    (imported.nodes||[]).forEach((label,i)=>{
+      const type=label==='agent'?'agent':label==='llm'?'llm':label==='finish'?'finish':'tool';
+      const p=pos[i]||{x:60+i*160, y:80+(i%3)*160};
+      PE.nodes.push({id:'n'+PE.nextId++,label,x:p.x,y:p.y,type});
+    });
+    (imported.edges||[]).forEach(([from,to])=>{
+      const a=PE.nodes.find(n=>n.label===from), b=PE.nodes.find(n=>n.label===to);
+      if(a&&b) PE.edges.push({from:a.id,to:b.id});
+    });
+
+    // ignore_internal_llm toggle
+    const ignEl=document.getElementById('pe-ignore-llm');
+    if(ignEl){
+      const val = imported.ignore_internal_llm!==false;
+      ignEl.dataset.val = String(val);
+      ignEl.querySelectorAll('.radio-opt').forEach((r,i)=>{
+        r.classList.toggle('selected', i===0 ? val : !val);
+      });
+    }
+
+    setTimeout(()=>{ window.peInit(); }, 30);
+  } else {
+    // Control plane fields
+    const at=document.getElementById('pe-allowed-tools');
+    if(at) at.value=(imported.allowed_tools||[]).join(', ');
+    const ml=document.getElementById('pe-max-llm');
+    if(ml) ml.value=imported.max_llm_calls!=null?imported.max_llm_calls:'';
+    const mt=document.getElementById('pe-max-tool');
+    if(mt) mt.value=imported.max_tool_calls!=null?imported.max_tool_calls:'';
+    const mtok=document.getElementById('pe-max-tokens');
+    if(mtok) mtok.value=imported.max_tokens!=null?imported.max_tokens:'';
+
+    // Per-tool limits
+    const ptlList=document.getElementById('pe-per-tool-limits');
+    if(ptlList){ ptlList.innerHTML=''; }
+    if(imported.max_tool_calls_per_tool){
+      Object.entries(imported.max_tool_calls_per_tool).forEach(([t,m])=>addPerToolLimit(t,m));
+    }
+  }
+
+  // Mocks
+  const mockList=document.getElementById('pe-mocks-list');
+  if(mockList){ mockList.innerHTML=''; }
+  (Array.isArray(imported.mocks)?imported.mocks:[]).forEach(m=>addMock(m));
+
+  // Assertions
+  const assertList=document.getElementById('pe-assertions-list');
+  if(assertList){ assertList.innerHTML=''; }
+  (Array.isArray(imported.assertions)?imported.assertions:[]).forEach(a=>addAssertion(a));
+};
 
 register('#policy-editor',
   () => ['Policy Editor', 'Create or edit a policy'],
@@ -895,235 +1268,230 @@ register('#policy-editor',
     const editName = sessionStorage.getItem('edit-policy');
     sessionStorage.removeItem('edit-policy');
 
-    let existing = null;
-    let existingJson = {};
+    let existing = null; let pj = {};
     if (editName) {
       try {
         existing = await api(`/policies/${encodeURIComponent(editName)}`);
-        existingJson = typeof existing.policy_json === 'string' ? JSON.parse(existing.policy_json) : (existing.policy_json || {});
-      } catch (e) { toast('Failed to load policy: ' + e.message, 'error'); }
+        pj = typeof existing.policy_json==='string' ? JSON.parse(existing.policy_json) : (existing.policy_json||{});
+      } catch (e) { toast('Failed to load policy: '+e.message, 'error'); }
     }
 
-    // State for mocks/assertions
-    let mocks = existingJson.mocks ? Object.entries(existingJson.mocks).map(([tool, cfg]) => ({ tool, response: JSON.stringify(cfg.response || cfg), match: '' })) : [];
-    let assertions = existingJson.assertions ? existingJson.assertions.map(a => typeof a === 'string' ? { target: a, op: 'equals', value: '' } : { target: a.target || '', op: a.op || 'equals', value: a.value || '' }) : [];
+    const isGraph = pj.mode==='graph' || (!pj.mode && Array.isArray(pj.nodes));
+
+    // Reset PE state
+    PE.nodes=[]; PE.edges=[]; PE.mode='drag'; PE.selected=null; PE.nextId=1;
+    if (isGraph && pj.nodes) {
+      const pos=[{x:60,y:180},{x:220,y:180},{x:380,y:100},{x:380,y:260},{x:540,y:180},{x:700,y:180},{x:700,y:100}];
+      pj.nodes.forEach((label,i)=>{
+        const type=label==='agent'?'agent':label==='llm'?'llm':label==='finish'?'finish':'tool';
+        const p=pos[i]||{x:60+i*160, y:80+(i%3)*160};
+        PE.nodes.push({id:'n'+PE.nextId++,label,x:p.x,y:p.y,type});
+      });
+      (pj.edges||[]).forEach(([from,to])=>{
+        const a=PE.nodes.find(n=>n.label===from), b=PE.nodes.find(n=>n.label===to);
+        if(a&&b) PE.edges.push({from:a.id,to:b.id});
+      });
+    }
+
+    const ignIllm = pj.ignore_internal_llm !== false;
 
     area.innerHTML = `
-      <div class="section-header">
-        <h2>${editName ? 'Edit Policy: ' + esc(editName) : 'New Policy'}</h2>
-        <a href="#policies" class="btn btn-ghost">← Back</a>
-      </div>
-      <div class="two-col" style="align-items:start">
-        <div>
-          <div class="card" style="margin-bottom:16px">
-            <h3>Basic Info</h3>
-            <div class="form-group">
-              <label>Policy Name *</label>
-              <input class="form-control" id="pe-name" value="${esc(existing?.name || '')}" placeholder="my-policy" ${editName ? 'readonly' : ''} />
-            </div>
-            <div class="form-group">
-              <label>Description</label>
-              <input class="form-control" id="pe-desc" value="${esc(existing?.description || '')}" placeholder="Optional description" />
-            </div>
-          </div>
-
-          <div class="card" style="margin-bottom:16px">
-            <h3>Policy Mode</h3>
-            <div id="pe-tabs"></div>
-          </div>
-
-          <div class="card" style="margin-bottom:16px">
-            <h3>Mocks</h3>
-            <div id="pe-mocks"></div>
-            <button class="btn btn-ghost btn-sm" id="pe-add-mock">+ Add Mock</button>
-          </div>
-
-          <div class="card" style="margin-bottom:16px">
-            <h3>Assertions</h3>
-            <div id="pe-asserts"></div>
-            <button class="btn btn-ghost btn-sm" id="pe-add-assert">+ Add Assertion</button>
-          </div>
-
-          <div style="display:flex;gap:10px">
-            <button class="btn btn-primary" id="pe-save">💾 Save Policy</button>
-            <button class="btn btn-ghost" onclick="location.hash='#policies'">Cancel</button>
-          </div>
-        </div>
-        <div class="card">
-          <h3>Policy JSON Preview</h3>
-          <pre class="policy-preview" id="pe-preview">{}</pre>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h2 style="font-size:18px;font-weight:700">${editName?'Edit Policy: '+esc(editName):'New Policy'}</h2>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-ghost" onclick="location.hash='#policies'">Cancel</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('pe-file-input').click()">📂 Import JSON</button>
+          <input type="file" id="pe-file-input" accept=".json" style="display:none"/>
+          <button class="btn btn-primary" id="pe-save-btn">💾 Save Policy</button>
         </div>
       </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="field"><label>Policy Name *</label>
+            <input class="form-control" id="pe-name" value="${esc(existing?.name||'')}" placeholder="my-policy" ${editName?'readonly':''}/>
+          </div>
+          <div class="field"><label>Description</label>
+            <input class="form-control" id="pe-desc" value="${esc(existing?.description||'')}" placeholder="Optional description"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabs" style="margin-bottom:20px">
+        <div class="tab ${isGraph?'active':''}" data-ptab="graph" onclick="switchPolicyTab('graph')">Graph Mode</div>
+        <div class="tab ${!isGraph?'active':''}" data-ptab="control" onclick="switchPolicyTab('control')">Control Plane Mode</div>
+      </div>
+
+      <!-- GRAPH MODE -->
+      <div id="ptab-graph" ${!isGraph?'class="hidden-panel"':''}>
+        <div class="pe-toolbar">
+          <button class="btn btn-ghost btn-sm" onclick="peAddNode('agent')">+ Agent</button>
+          <button class="btn btn-ghost btn-sm" onclick="peAddNode('llm')">+ LLM</button>
+          <button class="btn btn-ghost btn-sm" onclick="peAddNodeTool()">+ Tool</button>
+          <button class="btn btn-ghost btn-sm" onclick="peAddNode('finish')">+ Finish</button>
+          <div style="width:1px;height:20px;background:var(--line);margin:0 4px"></div>
+          <div class="mode-btn active" id="mode-drag" onclick="setPeMode('drag')">✥ Drag</div>
+          <div class="mode-btn" id="mode-connect" onclick="setPeMode('connect')">⟶ Connect</div>
+          <div class="mode-btn" id="mode-delete" onclick="setPeMode('delete')">✕ Delete</div>
+          <div class="pe-hint" id="pe-hint">Click a node to select; drag to move</div>
+        </div>
+        <div id="policy-canvas-wrap"><svg id="policy-canvas"></svg></div>
+        <div style="margin-top:10px;font-size:12px;color:var(--muted)">
+          <strong style="color:var(--text)">Generated policy JSON:</strong>
+          <pre id="pe-json-preview" style="margin-top:6px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px;font-size:11px;color:#b0c8ff;overflow-x:auto;max-height:120px"></pre>
+        </div>
+        <div class="field" style="margin-top:14px">
+          <label>ignore_internal_llm</label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap" id="pe-ignore-llm" data-val="${ignIllm}">
+            <div class="radio-opt ${ignIllm?'selected':''}" onclick="this.parentElement.dataset.val='true';this.parentElement.querySelectorAll('.radio-opt').forEach(r=>r.classList.remove('selected'));this.classList.add('selected');peSyncJson()">true (recommended)</div>
+            <div class="radio-opt ${!ignIllm?'selected':''}" onclick="this.parentElement.dataset.val='false';this.parentElement.querySelectorAll('.radio-opt').forEach(r=>r.classList.remove('selected'));this.classList.add('selected');peSyncJson()">false</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONTROL PLANE MODE -->
+      <div id="ptab-control" ${isGraph?'class="hidden-panel"':''}>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px">
+          <div class="field">
+            <label>Allowed Tools <span style="color:var(--muted);font-weight:400;text-transform:none">(comma-separated)</span></label>
+            <input class="form-control" id="pe-allowed-tools" placeholder="web_search, pdf_search" value="${esc((pj.allowed_tools||[]).join(', '))}"/>
+          </div>
+          <div class="field"><label>Max LLM Calls</label>
+            <input class="form-control" id="pe-max-llm" type="number" placeholder="unlimited" value="${esc(pj.max_llm_calls!=null?String(pj.max_llm_calls):'')}"/>
+          </div>
+          <div class="field"><label>Max Tool Calls</label>
+            <input class="form-control" id="pe-max-tool" type="number" placeholder="unlimited" value="${esc(pj.max_tool_calls!=null?String(pj.max_tool_calls):'')}"/>
+          </div>
+          <div class="field"><label>Max Tokens</label>
+            <input class="form-control" id="pe-max-tokens" type="number" placeholder="unlimited" value="${esc(pj.max_tokens!=null?String(pj.max_tokens):'')}"/>
+          </div>
+        </div>
+        <div class="field" style="margin-bottom:14px">
+          <label>Per-Tool Limits</label>
+          <div class="item-list" id="pe-per-tool-limits" style="margin-bottom:8px"></div>
+          <button class="btn btn-ghost btn-sm" onclick="addPerToolLimit()">+ Add Per-Tool Limit</button>
+        </div>
+      </div>
+
+      <!-- MOCKS -->
+      <hr style="border:none;border-top:1px solid var(--line);margin:20px 0"/>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <span style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.09em">Mocks</span>
+        <button class="btn btn-ghost btn-sm" onclick="addMock()">+ Add Mock</button>
+      </div>
+      <div class="item-list" id="pe-mocks-list" style="margin-bottom:4px"></div>
+
+      <!-- ASSERTIONS -->
+      <hr style="border:none;border-top:1px solid var(--line);margin:20px 0"/>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <span style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.09em">Assertions</span>
+        <button class="btn btn-ghost btn-sm" onclick="addAssertion()">+ Add Assertion</button>
+      </div>
+      <div class="item-list" id="pe-assertions-list" style="margin-bottom:20px"></div>
     `;
 
-    // Tabs
-    const tabContainer = document.getElementById('pe-tabs');
-    const mode = existingJson.mode || (existingJson.graph ? 'graph' : 'control-plane');
-    makeTabs(tabContainer, [
-      { id: 'graph', label: 'Graph Mode', content: (p) => {
-        p.innerHTML = `
-          <div class="form-group">
-            <label>Nodes (JSON array of strings)</label>
-            <textarea class="form-control" id="pe-nodes" rows="3" placeholder='["agent","llm","tool:search","finish"]'>${esc(JSON.stringify(existingJson.graph?.nodes || existingJson.nodes || []))}</textarea>
-          </div>
-          <div class="form-group">
-            <label>Edges (JSON array of [from,to] pairs)</label>
-            <textarea class="form-control" id="pe-edges" rows="4" placeholder='[["agent","llm"],["llm","finish"]]'>${esc(JSON.stringify(existingJson.graph?.edges || existingJson.edges || []))}</textarea>
-          </div>
-        `;
-        p.querySelectorAll('textarea').forEach(t => t.addEventListener('input', updatePreview));
-      }},
-      { id: 'control', label: 'Control Plane Mode', content: (p) => {
-        p.innerHTML = `
-          <div class="form-group">
-            <label>Allowed Tools (comma-separated)</label>
-            <input class="form-control" id="pe-allowed-tools" value="${esc((existingJson.allowed_tools || []).join(', '))}" placeholder="web_search, calculator" />
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>Max LLM Calls</label>
-              <input class="form-control" id="pe-max-llm" type="number" value="${esc(existingJson.max_llm_calls ?? '')}" placeholder="e.g. 5" />
-            </div>
-            <div class="form-group">
-              <label>Max Tool Calls</label>
-              <input class="form-control" id="pe-max-tool" type="number" value="${esc(existingJson.max_tool_calls ?? '')}" placeholder="e.g. 10" />
-            </div>
-          </div>
-          <div class="form-group">
-            <label>Max Tokens per Conversation</label>
-            <input class="form-control" id="pe-max-tokens" type="number" value="${esc(existingJson.max_tokens ?? '')}" placeholder="e.g. 4000" />
-          </div>
-        `;
-        p.querySelectorAll('input').forEach(i => i.addEventListener('input', updatePreview));
-      }},
-    ]);
-
-    // Mocks
-    function renderMocks() {
-      const container = document.getElementById('pe-mocks');
-      container.innerHTML = '';
-      mocks.forEach((m, i) => {
-        const row = el('div', { class: 'mock-row' });
-        row.innerHTML = `
-          <input class="form-control" placeholder="tool name" value="${esc(m.tool)}" />
-          <input class="form-control" placeholder='response JSON (e.g. {"result":"ok"})' value="${esc(m.response)}" />
-          <button class="btn btn-danger btn-sm">✕</button>
-        `;
-        const inputs = row.querySelectorAll('input');
-        inputs[0].addEventListener('input', () => { mocks[i].tool = inputs[0].value; updatePreview(); });
-        inputs[1].addEventListener('input', () => { mocks[i].response = inputs[1].value; updatePreview(); });
-        row.querySelector('button').addEventListener('click', () => { mocks.splice(i, 1); renderMocks(); updatePreview(); });
-        container.appendChild(row);
-      });
+    // Populate per-tool limits
+    if (pj.max_tool_calls_per_tool) {
+      Object.entries(pj.max_tool_calls_per_tool).forEach(([t,m])=>addPerToolLimit(t,m));
     }
-    renderMocks();
-    document.getElementById('pe-add-mock').addEventListener('click', () => {
-      mocks.push({ tool: '', response: '' });
-      renderMocks();
-    });
+    // Populate mocks
+    (Array.isArray(pj.mocks)?pj.mocks:[]).forEach(m=>addMock(m));
+    // Populate assertions
+    (Array.isArray(pj.assertions)?pj.assertions:[]).forEach(a=>addAssertion(a));
 
-    // Assertions
-    function renderAsserts() {
-      const container = document.getElementById('pe-asserts');
-      container.innerHTML = '';
-      assertions.forEach((a, i) => {
-        const row = el('div', { class: 'assert-row' });
-        row.innerHTML = `
-          <input class="form-control" placeholder="target (e.g. output, tool:search.output)" value="${esc(a.target)}" style="flex:1.5" />
-          <select class="form-control" style="flex:1">
-            <option value="equals" ${a.op==='equals'?'selected':''}>equals</option>
-            <option value="contains" ${a.op==='contains'?'selected':''}>contains</option>
-            <option value="starts_with" ${a.op==='starts_with'?'selected':''}>starts_with</option>
-            <option value="matches_regex" ${a.op==='matches_regex'?'selected':''}>matches_regex</option>
-          </select>
-          <input class="form-control" placeholder="expected value" value="${esc(a.value)}" style="flex:1.5" />
-          <button class="btn btn-danger btn-sm">✕</button>
-        `;
-        const [tgt, sel, val] = row.querySelectorAll('input, select');
-        tgt.addEventListener('input', () => { assertions[i].target = tgt.value; updatePreview(); });
-        sel.addEventListener('change', () => { assertions[i].op = sel.value; updatePreview(); });
-        val.addEventListener('input', () => { assertions[i].value = val.value; updatePreview(); });
-        row.querySelector('button').addEventListener('click', () => { assertions.splice(i, 1); renderAsserts(); updatePreview(); });
-        container.appendChild(row);
-      });
-    }
-    renderAsserts();
-    document.getElementById('pe-add-assert').addEventListener('click', () => {
-      assertions.push({ target: '', op: 'equals', value: '' });
-      renderAsserts();
-    });
+    // Init SVG canvas
+    setTimeout(()=>{ if(isGraph) window.peInit(); }, 60);
 
-    function buildJson() {
-      const activeTab = tabContainer.querySelector('.tab.active');
-      const isGraph = activeTab && activeTab.textContent.includes('Graph');
-
-      const obj = {};
-      if (isGraph) {
-        obj.mode = 'graph';
-        try { obj.nodes = JSON.parse(document.getElementById('pe-nodes')?.value || '[]'); } catch { obj.nodes = []; }
-        try { obj.edges = JSON.parse(document.getElementById('pe-edges')?.value || '[]'); } catch { obj.edges = []; }
-      } else {
-        obj.mode = 'control-plane';
-        const at = document.getElementById('pe-allowed-tools')?.value || '';
-        if (at.trim()) obj.allowed_tools = at.split(',').map(s => s.trim()).filter(Boolean);
-        const ml = document.getElementById('pe-max-llm')?.value;
-        if (ml) obj.max_llm_calls = parseInt(ml);
-        const mt = document.getElementById('pe-max-tool')?.value;
-        if (mt) obj.max_tool_calls = parseInt(mt);
-        const mtok = document.getElementById('pe-max-tokens')?.value;
-        if (mtok) obj.max_tokens = parseInt(mtok);
-      }
-
-      if (mocks.length > 0) {
-        obj.mocks = {};
-        for (const m of mocks) {
-          if (!m.tool) continue;
-          let resp = m.response;
-          try { resp = JSON.parse(m.response); } catch {}
-          obj.mocks[m.tool] = { enabled: true, response: resp };
+    // Import JSON file
+    document.getElementById('pe-file-input').addEventListener('change', function() {
+      const file = this.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const imported = JSON.parse(e.target.result);
+          peImportJson(imported);
+          toast('Policy imported from file', 'success');
+        } catch {
+          toast('Invalid JSON file', 'error');
         }
-      }
-      if (assertions.length > 0) {
-        obj.assertions = assertions.filter(a => a.target).map(a => ({
-          target: a.target, op: a.op, value: a.value,
-        }));
-      }
-      return obj;
-    }
-
-    function updatePreview() {
-      const preview = document.getElementById('pe-preview');
-      if (preview) {
-        try { preview.textContent = JSON.stringify(buildJson(), null, 2); } catch {}
-      }
-    }
-    updatePreview();
-
-    // Listen for tab changes
-    tabContainer.querySelectorAll('.tab').forEach(t => {
-      t.addEventListener('click', () => setTimeout(updatePreview, 50));
-    });
-    // Listen for name/desc changes
-    ['pe-name','pe-desc'].forEach(id => {
-      document.getElementById(id)?.addEventListener('input', updatePreview);
+        this.value = ''; // allow re-importing same file
+      };
+      reader.readAsText(file);
     });
 
-    document.getElementById('pe-save').addEventListener('click', async () => {
+    // Save
+    document.getElementById('pe-save-btn').addEventListener('click', async () => {
       const name = document.getElementById('pe-name').value.trim();
-      if (!name) { toast('Policy name is required', 'error'); return; }
+      if (!name) { toast('Policy name is required','error'); return; }
       const desc = document.getElementById('pe-desc').value.trim();
-      const policy_json = buildJson();
-      const payload = { name, description: desc, policy_json };
-      try {
-        if (editName) {
-          await api(`/policies/${encodeURIComponent(editName)}`, { method: 'PUT', body: payload });
-          toast('Policy updated', 'success');
-        } else {
-          await api('/policies', { method: 'POST', body: payload });
-          toast('Policy created', 'success');
+      const activeTab = document.querySelector('[data-ptab].active');
+      const mode = activeTab?.dataset.ptab==='control' ? 'control_plane' : 'graph';
+      const obj = {mode};
+
+      if (mode==='graph') {
+        obj.nodes=PE.nodes.map(n=>n.label);
+        obj.edges=PE.edges.map(e=>[PE.nodes.find(n=>n.id===e.from)?.label,PE.nodes.find(n=>n.id===e.to)?.label].filter(Boolean));
+        const ignEl=document.getElementById('pe-ignore-llm');
+        obj.ignore_internal_llm=ignEl?ignEl.dataset.val!=='false':true;
+      } else {
+        const at=document.getElementById('pe-allowed-tools').value;
+        if(at.trim()) obj.allowed_tools=at.split(',').map(s=>s.trim()).filter(Boolean);
+        const ml=document.getElementById('pe-max-llm').value; if(ml) obj.max_llm_calls=parseInt(ml);
+        const mt=document.getElementById('pe-max-tool').value; if(mt) obj.max_tool_calls=parseInt(mt);
+        const mtok=document.getElementById('pe-max-tokens').value; if(mtok) obj.max_tokens=parseInt(mtok);
+        const ptlCards=[...document.querySelectorAll('#pe-per-tool-limits .item-card')];
+        if(ptlCards.length){
+          obj.max_tool_calls_per_tool={};
+          ptlCards.forEach(c=>{ const t=c.querySelector('.ptl-tool')?.value.trim(); const m=c.querySelector('.ptl-max')?.value; if(t&&m) obj.max_tool_calls_per_tool[t]=parseInt(m); });
         }
-        location.hash = '#policies';
-      } catch (e) { toast('Error: ' + e.message, 'error'); }
+      }
+
+      // Mocks
+      const mockCards=[...document.querySelectorAll('#pe-mocks-list .item-card')];
+      if(mockCards.length){
+        obj.mocks=[];
+        mockCards.forEach(c=>{
+          const inputs=[...c.querySelectorAll('input')];
+          const target=inputs[0]?.value.trim(); if(!target) return;
+          const matchContains=inputs[1]?.value.trim();
+          const type=c.querySelector('select')?.value;
+          const m={target}; if(matchContains) m.match_contains=matchContains;
+          if(type==='tool_call'){
+            const tn=c.querySelector('.mock-tool-name')?.value.trim();
+            let args={}; try{args=JSON.parse(c.querySelector('.mock-tool-args')?.value||'{}')}catch{}
+            m.return_tool_call={tool:tn,args};
+          } else if(type==='ai_message'){
+            m.ai_message=c.querySelector('.mock-ai-val')?.value||'';
+          } else {
+            m.output=c.querySelector('.mock-out-val')?.value||'';
+          }
+          obj.mocks.push(m);
+        });
+      }
+
+      // Assertions
+      const assertCards=[...document.querySelectorAll('#pe-assertions-list .item-card')];
+      if(assertCards.length){
+        obj.assertions=[];
+        assertCards.forEach(c=>{
+          const target=c.querySelector('.as-target')?.value.trim(); if(!target) return;
+          obj.assertions.push({
+            target,
+            check:c.querySelector('.as-check')?.value||'input',
+            operator:c.querySelector('.as-op')?.value||'contains',
+            expected:c.querySelector('.as-expected')?.value||'',
+            description:c.querySelector('.as-desc')?.value||'',
+          });
+        });
+      }
+
+      obj.audit_file='agent_audit.json';
+      try {
+        const payload={name,description:desc,policy_json:obj};
+        if(editName){ await api(`/policies/${encodeURIComponent(editName)}`,{method:'PUT',body:payload}); toast('Policy updated','success'); }
+        else { await api('/policies',{method:'POST',body:payload}); toast('Policy created','success'); }
+        location.hash='#policies';
+      } catch(e){ toast('Error: '+e.message,'error'); }
     });
   }
 );
@@ -1768,15 +2136,48 @@ register('#run-suite',
         appendLog(logArea, `Suite run started: ${suite_run_id}\n`, 'info');
 
         activeES = new EventSource(`/api/runs/suite/${encodeURIComponent(suite_run_id)}/stream`);
-        activeES.onmessage = (evt) => {
+        activeES.onmessage = async (evt) => {
           try {
             const data = JSON.parse(evt.data);
             if (data.done) {
               activeES.close(); activeES = null;
               runBtn.disabled = false;
               const c = data.counts || {};
-              summaryEl.innerHTML = `<span class="badge badge-pass">✓ ${c.pass||0}</span> <span class="badge badge-fail">✗ ${c.fail||0}</span> <span class="badge badge-xfail">${c.xfail||0} xfail</span>`;
-              appendLog(logArea, `\n--- Suite Done ---\nPass: ${c.pass||0}  Fail: ${c.fail||0}  XFail: ${c.xfail||0}`, 'ok');
+              // Replace area with results table
+              try {
+                const suiteRunData = await api(`/runs/suite/${suite_run_id}`);
+                const testRuns = suiteRunData.test_runs || [];
+                const pass = c.pass||0, fail = c.fail||0, xfail = c.xfail||0, xpass = c.xpass||0;
+                area.innerHTML = `
+                  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                    <h2 style="font-size:18px;font-weight:700">${esc(name)} — Results</h2>
+                    <span class="badge badge-pass">✓ ${pass} pass</span>
+                    ${fail ? `<span class="badge badge-fail">✗ ${fail} fail</span>` : ''}
+                    ${xfail ? `<span class="badge badge-xfail">${xfail} xfail</span>` : ''}
+                    ${xpass ? `<span class="badge badge-xpass">${xpass} xpass</span>` : ''}
+                    <button class="btn btn-ghost btn-sm" onclick="navigate('#run-suite')" style="margin-left:auto">← New Run</button>
+                  </div>
+                  <div class="card">
+                    <table>
+                      <thead><tr><th>Test Case</th><th>Outcome</th><th>Report</th></tr></thead>
+                      <tbody>
+                        ${testRuns.map(r => {
+                          const fname = r.audit_html_path ? r.audit_html_path.split('/').pop() : null;
+                          return `<tr>
+                            <td><strong>${esc(r.test_case_name)}</strong></td>
+                            <td>${badge(r.outcome)}</td>
+                            <td>${fname ? `<a href="/audit/${esc(fname)}" target="_blank" class="btn btn-ghost btn-sm">View Report</a>` : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
+                          </tr>`;
+                        }).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                `;
+                return;
+              } catch {}
+              // Fallback
+              summaryEl.innerHTML = `<span class="badge badge-pass">✓ ${c.pass||0}</span> <span class="badge badge-fail">✗ ${c.fail||0}</span>`;
+              appendLog(logArea, `\n--- Suite Done ---\nPass: ${c.pass||0}  Fail: ${c.fail||0}`, 'ok');
             } else if (data.test) {
               updateTestRow(data.test, data.status, data.outcome);
               if (data.log) appendLog(logArea, `[${data.test}] ${data.log}`, 'info');
@@ -1854,16 +2255,15 @@ register('#history',
         </tr></thead>`;
         const tbody = el('tbody');
         for (const r of runs.slice().reverse()) {
-          const c = r.counts || {};
-          const total = (c.pass||0) + (c.fail||0) + (c.xfail||0) + (c.xpass||0);
+          const total = (r.pass_count||0) + (r.fail_count||0) + (r.xfail_count||0) + (r.xpass_count||0);
           const tr = el('tr');
           tr.innerHTML = `
-            <td><code style="font-size:11px">${esc(r.suite_run_id || r.id || '—')}</code></td>
-            <td style="color:var(--muted);font-size:12px">${fmtDate(r.started_at || r.created_at)}</td>
-            <td class="c-green">${c.pass||0}</td>
-            <td class="c-red">${c.fail||0}</td>
-            <td class="c-cyan">${c.xfail||0}</td>
-            <td class="c-yellow">${c.xpass||0}</td>
+            <td><code style="font-size:11px">${esc(r.id || '—')}</code></td>
+            <td style="color:var(--muted);font-size:12px">${fmtDate(r.started_at)}</td>
+            <td class="c-green">${r.pass_count||0}</td>
+            <td class="c-red">${r.fail_count||0}</td>
+            <td class="c-cyan">${r.xfail_count||0}</td>
+            <td class="c-yellow">${r.xpass_count||0}</td>
             <td>${total}</td>
           `;
           tbody.appendChild(tr);
@@ -1892,9 +2292,8 @@ function drawPassRateChart(canvas, runs) {
     ctx.clearRect(0, 0, W, H);
 
     const data = runs.slice(-20).map(r => {
-      const c = r.counts || {};
-      const total = (c.pass||0) + (c.fail||0) + (c.xfail||0) + (c.xpass||0);
-      return total === 0 ? 0 : Math.round(((c.pass||0) + (c.xfail||0)) / total * 100);
+      const total = (r.pass_count||0) + (r.fail_count||0) + (r.xfail_count||0) + (r.xpass_count||0);
+      return total === 0 ? 0 : Math.round(((r.pass_count||0) + (r.xfail_count||0)) / total * 100);
     });
 
     if (data.length === 0) return;

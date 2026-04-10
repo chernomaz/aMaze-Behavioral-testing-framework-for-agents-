@@ -66,14 +66,43 @@ async def fetch_tools(name: str):
     tools = []
     status = "error"
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=10) as client:
+            headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+
+            # Step 1: initialize to obtain session ID
+            init_resp = await client.post(
+                url,
+                json={"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "amazetest-gui", "version": "0.1"},
+                }},
+                headers=headers,
+            )
+            session_id = init_resp.headers.get("mcp-session-id")
+            if session_id:
+                headers["mcp-session-id"] = session_id
+
+            # Step 2: list tools
             resp = await client.post(
                 url,
                 json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}},
-                headers={"Content-Type": "application/json"},
+                headers=headers,
             )
-            data = resp.json()
-            tools = data.get("result", {}).get("tools", [])
+
+            # Parse SSE or plain JSON
+            data = None
+            ct = resp.headers.get("content-type", "")
+            if "text/event-stream" in ct:
+                for line in resp.text.splitlines():
+                    if line.startswith("data:"):
+                        data = json.loads(line[len("data:"):].strip())
+                        break
+            else:
+                data = resp.json()
+
+            if data:
+                tools = data.get("result", {}).get("tools", [])
             status = "ok"
     except Exception:
         status = "error"

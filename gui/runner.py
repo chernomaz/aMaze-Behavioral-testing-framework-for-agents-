@@ -40,12 +40,12 @@ async def run_test_async(
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT)
     env["PYTHONUNBUFFERED"] = "1"
+    env["AGENT_PROMPT"] = prompt
 
     cmd = [
         PYTHON, "-m", RUNNER_MODULE,
-        "--policy", str(policy_file),
-        "--agent", str(agent_path),
-        "--prompt", prompt,
+        str(agent_path),
+        str(policy_file),
     ]
 
     log_lines: list[str] = []

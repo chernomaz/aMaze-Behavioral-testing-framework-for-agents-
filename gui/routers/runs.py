@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/runs", tags=["runs"])
 # ── Single test run ────────────────────────────────────────────────────────────
 
 @router.post("/test")
-def start_single_run(body: RunTestIn):
+async def start_single_run(body: RunTestIn):
     """Start a single test run (non-streaming). Returns run_id immediately."""
     conn = get_conn()
     tc = conn.execute(
@@ -124,7 +124,7 @@ def get_single_run(run_id: int):
 # ── Suite run ─────────────────────────────────────────────────────────────────
 
 @router.post("/suite")
-def start_suite_run(body: RunSuiteIn):
+async def start_suite_run(body: RunSuiteIn):
     """Start a suite run. Returns suite_run_id immediately; execution is sequential."""
     conn = get_conn()
     suite = conn.execute("SELECT * FROM suites WHERE name=?", (body.suite_name,)).fetchone()
