@@ -20,12 +20,9 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-DATA_DIR = "/data/learn/pdf_reader/pdf_docs/Pdf"
-CHROMA_DIR = "/data/learn/pdf_reader/chroma_db"
+DATA_DIR = os.getenv("DATA_DIR", "/home/ubuntu/data/learn/pdf_reader/")
+CHROMA_DIR = os.getenv("CHROMA_DIR", "/home/ubuntu/data/learn/chroma_db/")
 COLLECTION_NAME = "pdf_docs"
-
-#DATA_DIR = "data"
-#CHROMA_DIR = "chroma_db"
 
 
 def load_pdf_documents(data_dir: str):

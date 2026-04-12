@@ -1,0 +1,59 @@
+# aMazeTest dependencies
+# Generated 2026-04-12 — pinned with pip freeze
+
+# --- Core LangChain stack ---
+langchain==1.2.15
+langchain-core==1.2.28
+langchain-classic==1.0.3
+langchain-openai==1.1.12
+langchain-community==0.4.1
+langchain-chroma==1.1.0
+langchain-text-splitters==1.1.1
+langchain-mcp-adapters==0.2.2
+
+# --- LangGraph ---
+langgraph==1.1.6
+langgraph-checkpoint==4.0.1
+langgraph-prebuilt==1.0.9
+langgraph-sdk==0.3.13
+
+# --- LangSmith ---
+langsmith==0.7.30
+
+# --- LLM providers ---
+openai==2.31.0
+
+# --- Vector store ---
+chromadb==1.5.7
+
+# --- PDF loading ---
+pypdf==6.10.0
+
+# --- Web search ---
+tavily-python==0.7.23
+
+# --- MCP ---
+mcp==1.27.0
+fastmcp==3.2.3
+
+# --- GUI / API server ---
+fastapi==0.135.3
+uvicorn==0.44.0
+starlette==1.0.0
+sse-starlette==3.3.4
+python-multipart==0.0.26
+
+# --- Testing ---
+pytest==9.0.3
+
+# --- Utilities ---
+python-dotenv==1.2.2
+pydantic==2.12.5
+pydantic-settings==2.13.1
+httpx==0.28.1
+requests==2.33.1
+tenacity==9.1.4
+PyYAML==6.0.3
+tiktoken==0.12.0
+numpy==2.4.4
+SQLAlchemy==2.0.49

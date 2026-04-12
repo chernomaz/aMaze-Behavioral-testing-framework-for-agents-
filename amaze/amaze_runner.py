@@ -4,9 +4,22 @@ import sys
 from pathlib import Path
 
 from amaze.instrumentation import install
+from amaze import annotations as _annotations
 from amaze.policy import Policy
 from amaze.state import PolicyViolation, RuntimeState
 from amaze.reporting import generate_html_report, open_report_if_possible
+
+
+_ANNOTATION_MARKERS = ("amaze_tool", "amaze_llm", "amaze_agent", "from amaze.annotations", "from amaze import")
+
+
+def _uses_annotations(script_path: str) -> bool:
+    """Return True if the agent script imports or uses amaze annotation decorators."""
+    try:
+        source = Path(script_path).read_text(encoding="utf-8")
+        return any(marker in source for marker in _ANNOTATION_MARKERS)
+    except OSError:
+        return False
 
 
 def main():
@@ -28,7 +41,12 @@ def main():
     print(f"[aMaze] script={script}", flush=True)
     print(f"[aMaze] trace_id={runtime.trace_id}", flush=True)
 
-    install(runtime)
+    if _uses_annotations(script):
+        print("[aMaze] mode=annotations", flush=True)
+        _annotations.set_runtime(runtime)
+    else:
+        print("[aMaze] mode=langchain", flush=True)
+        install(runtime)
 
     policy_violation = None
     script_error = None

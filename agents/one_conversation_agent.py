@@ -26,8 +26,8 @@ def _try_init_vectorstore():
         from langchain_community.document_loaders import PyPDFDirectoryLoader
         from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-        DATA_DIR = "/data/learn/pdf_reader/pdf_docs/Pdf"
-        CHROMA_DIR = "/data/learn/pdf_reader/chroma_db"
+        DATA_DIR = os.getenv("DATA_DIR", "/home/ubuntu/data/learn/pdf_reader/")
+        CHROMA_DIR = os.getenv("CHROMA_DIR", "/home/ubuntu/data/learn/chroma_db/")
         COLLECTION_NAME = "pdf_docs"
 
         embeddings = OllamaEmbeddings(model="nomic-embed-text")
