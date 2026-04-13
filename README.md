@@ -37,11 +37,13 @@ no custom wrappers
 <p align="center">
   <img src="docs/assets/report-sequence.png" width="900">
 </p>
+## 
 - Full execution trace (agent → LLM → tools)
 - Policy validation (allowed tools, call limits, execution graph)
 - Token usage and counters
 - Mocked vs real calls clearly marked
-- Assertion failures with exact context
+- Assertion failures with exact contex
+
 
 ---
 ##🧠 Why not just tracing or evals?
